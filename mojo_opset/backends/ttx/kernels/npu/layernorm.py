@@ -63,7 +63,9 @@ def _layernorm_fwd_kernel(
         rows_off = block_start_row + tl.arange(0, BLOCK_SIZE_M)
         rows_mask = rows_off < n_rows
 
+        # Stage 1: compute mean and rstd in one pass over X
         sum_acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+        sum_sq_acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
 
         for col_offset in range(0, n_cols, BLOCK_SIZE_N):
             cols_off = col_offset + tl.arange(0, BLOCK_SIZE_N)
@@ -75,34 +77,16 @@ def _layernorm_fwd_kernel(
             ).to(tl.float32)
 
             sum_acc += tl.sum(x_chunk, axis=1)
+            sum_sq_acc += tl.sum(x_chunk * x_chunk, axis=1)
 
         mean = sum_acc / n_cols
-
-        tl.store(Mean_ptr + rows_off, mean, mask=rows_mask)
-
-        var_acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
-
-        for col_offset in range(0, n_cols, BLOCK_SIZE_N):
-            cols_off = col_offset + tl.arange(0, BLOCK_SIZE_N)
-            cols_mask = cols_off < n_cols
-            block_mask = rows_mask[:, None] & cols_mask[None, :]
-
-            x_chunk = tl.load(
-                X_ptr + rows_off[:, None] * stride_x_row + cols_off[None, :], mask=block_mask, other=0.0
-            ).to(tl.float32)
-
-            w_chunk = tl.load(W_ptr + cols_off, mask=cols_mask, other=0.0).to(tl.float32)
-            b_chunk = tl.load(B_ptr + cols_off, mask=cols_mask, other=0.0).to(tl.float32)
-
-            x_centered = x_chunk - mean[:, None]
-
-            var_acc += tl.sum(x_centered * x_centered, axis=1)
-
-        var = var_acc / n_cols
+        var = sum_sq_acc / n_cols - mean * mean
         rstd = rsqrt(var + eps)
 
+        tl.store(Mean_ptr + rows_off, mean, mask=rows_mask)
         tl.store(RSTD_ptr + rows_off, rstd, mask=rows_mask)
 
+        # Stage 2: normalize and write output
         for col_offset in range(0, n_cols, BLOCK_SIZE_N):
             cols_off = col_offset + tl.arange(0, BLOCK_SIZE_N)
             cols_mask = cols_off < n_cols
