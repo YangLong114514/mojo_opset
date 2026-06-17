@@ -2,7 +2,7 @@ import torch
 import triton
 import triton.language as tl
 import triton.language.extra.cann.libdevice as libdevice
-from .utils import libentry
+from .utils import get_num_cores, libentry
 
 """
 This file contains the implementation of GELU (Gaussian Error Linear Unit) for NPU.
@@ -17,7 +17,6 @@ Modifications for NPU architecture by triton-x team, 2025.
 
 
 MAX_BLOCK_SIZE_N = 1024
-GELU_TANH_MAX_BLOCK_SIZE_M = 8
 
 
 GELU_TANH_BLOCK_SIZE_M_CONFIGS = [
@@ -26,6 +25,10 @@ GELU_TANH_BLOCK_SIZE_M_CONFIGS = [
     triton.Config({"BLOCK_SIZE_M": 4}),
     triton.Config({"BLOCK_SIZE_M": 8}),
 ]
+
+GELU_TANH_MAX_BLOCK_SIZE_M = max(
+    config.kwargs["BLOCK_SIZE_M"] for config in GELU_TANH_BLOCK_SIZE_M_CONFIGS
+)
 
 
 @triton.jit
@@ -218,15 +221,9 @@ def _rowwise_block_size_n(n_cols):
     return min(triton.next_power_of_2(n_cols), MAX_BLOCK_SIZE_N)
 
 
-def _num_vectorcores():
-    return triton.runtime.driver.active.utils.get_device_properties("npu")[
-        "num_vectorcore"
-    ]
-
-
 def _rowwise_grid(n_rows, block_size_m):
     num_row_tasks = (n_rows + block_size_m - 1) // block_size_m
-    return (min(_num_vectorcores(), num_row_tasks),)
+    return (max(1, min(get_num_cores("vector"), num_row_tasks)),)
 
 
 def _rowwise_autotune_grid(n_rows):
