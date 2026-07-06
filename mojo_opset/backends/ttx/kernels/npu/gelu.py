@@ -1,7 +1,11 @@
 import torch
 import triton
 import triton.language as tl
-import triton.language.extra.cann.libdevice as libdevice
+try:
+    import triton.language.extra.cann.libdevice as libdevice
+except ModuleNotFoundError:
+    libdevice = tl
+
 from .utils import get_num_cores, libentry
 
 """
