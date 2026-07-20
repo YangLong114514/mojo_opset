@@ -1186,10 +1186,12 @@ def rms_norm_dynamic_quant_impl(
     d = dim
 
     # ---- Block size selection ----
+    is_aligned = (d % BLOCK_N_ALIGN == 0)
     use_prefill = (
         should_use_prefill_kernel(d, total_rows)
         and smooth_scale is not None
         and beta is None
+        and is_aligned
     )
     use_small_cols = should_use_small_cols(d, block_size_n)
     if block_size_n is None:
@@ -1263,7 +1265,7 @@ def rms_norm_dynamic_quant_impl(
 
         grid = (_select_grid(total_rows),)
 
-        if use_small_cols and has_smooth and not has_beta:
+        if use_small_cols and has_smooth and not has_beta and is_aligned:
             _rms_norm_dynamic_quant_small_cols_dsa_smooth_kernel[grid](
                 x_2d,
                 gamma,
@@ -1389,7 +1391,7 @@ def rms_norm_dynamic_quant_impl(
 
         grid = (_select_grid(total_rows),)
 
-        if use_small_cols and has_smooth and not has_beta:
+        if use_small_cols and has_smooth and not has_beta and is_aligned:
             _rms_norm_dynamic_quant_small_cols_dsa_smooth_kernel_non_tle[grid](
                 x_2d,
                 gamma,
