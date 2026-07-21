@@ -39,6 +39,10 @@ def test_dsv4_hash_gating(experts, routed_scaling_factor, num_tokens, dtype):
         norm_type=DSV4_SCORING,
     ).to(x.device)
 
+    for _ in range(30):
+        op(x, input_ids, tid2eid)
+    torch.npu.synchronize()
+
     perf(lambda: op(x, input_ids, tid2eid))  # noqa: F821
 
 
@@ -65,5 +69,9 @@ def test_dsv4_norm_type_comparison(norm_type, num_tokens, dtype):
         routed_scaling_factor=1.5,
         eps=1e-6,
     ).to(x.device)
+
+    for _ in range(30):
+        op(x, input_ids, tid2eid)
+    torch.npu.synchronize()
 
     perf(lambda: op(x, input_ids, tid2eid))  # noqa: F821
